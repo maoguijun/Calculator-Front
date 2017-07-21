@@ -1,7 +1,8 @@
 {
-  "name": "gaoan",
+  "name": "Calculator-Front",
   "version": "0.1.0",
   "private": true,
+  "author": "毛贵军",
   "dependencies": {
     "antd": "^2.11.2",
     "autoprefixer": "7.1.1",

@@ -16,6 +16,7 @@ import {connect} from 'react-redux';
 import {isEmptyObject} from '../../util/CommonUtil';
 import { getData } from '../../actions/SoleCompany';
 import { formatDate, formatMoney, configDirectory, configDirectoryObject } from '../../utils/formatData';
+import pretreatNumber from '../../utils/pretreat';
 
 const { Item } = Form;
 
@@ -57,39 +58,32 @@ class SoleCompanyPage extends Component {
 		dispatch(getData());
 	}
 //通过应税收入获取当前税率表
-	getRateByTaxable_income_year(deduction,data) { 
-		if (deduction > data[4].min) {
-			return data[4];
-		} else if (deduction > data[3].min) {
-			return data[3];
-		} else if (deduction > data[2].min) {
-			return data[2];
-		} else if (deduction > data[1].min) {
-			return data[1];
-		} else if (deduction > data[0].min) {
-			return data[0];
+	getRateByTaxable_income_year(value,data) { 
+		let rate_current = {};
+		for (let i = 0; i < data.length; i++) { 
+			if (value > data[i].min) { 
+				rate_current = data[i];
+			}
 		}
+		return rate_current;
 	}
 	//通过年税后收入获取当前税率表
-	getRateByAfter_tax_year(after_tax_year, data) { 
-		let C = [];
+	getRateByAfter_tax_year(after_tax_year, data, profit_rate) { 
+		console.log(after_tax_year);
+		console.log(profit_rate,data);
+		let C = [], rate_current = {};
 		for (let i = 0; i < data.length; i++) { 
-			C[i] = data[i].max - data[i].max * data[i].rate + data[i].deduction;
+			C[i] = data[i].min - data[i].min * data[i].rate + data[i].deduction;
+			console.log(data[i])
+			let taxable_income_year_copy = (after_tax_year - data[i].deduction) * profit_rate / (1 - data[i].rate * profit_rate);
+			console.log(C[i], taxable_income_year_copy);
+			if (taxable_income_year_copy > C[i]) { 
+				rate_current = data[i];
+			}
 		}
 		console.log(C);
-		if (after_tax_year > C[4]) {
-			return data[4];
-		} else if (after_tax_year > C[3]) { 
-			return data[3]
-		} else if (after_tax_year > C[2]) { 
-			return data[2]
-		} else if (after_tax_year > C[1]) { 
-			return data[1]
-		} else if (after_tax_year > C[0]) { 
-			return data[0]
-		} else if (after_tax_year < C[0]) { 
-			return data[0]
-		}
+		console.log('80', rate_current);
+		return rate_current;
 	}
 
 	onSubmit(e) { 
@@ -103,62 +97,65 @@ class SoleCompanyPage extends Component {
 				data = SoleCompanyData.objs[i].taxRateDetails;
 			}
 		}
-		//let data = SoleCompanyData.objs[0].taxRateDetails;//拿到劳务报酬个人所得税率
 		console.log('2222',data);
 		this.props.form.validateFields((err, value) => {
-			let pre_tax_month = parseFloat(value.pre_tax_month);//月开票总金额
-			let after_tax_month = parseFloat(value.after_tax_month);//月到手净得
-			let after_tax_year = parseFloat(value.after_tax_year);//年到手净得
-			let tax_month_add;//月增值税
-			let tax_year_add;//年增值税
-			let surtax_month;//月附加税
-			let surtax_year;//年附加税
-			let taxable_income_month;//月应税所得
-			let taxable_income_year;//年应税所得
-			let tax_year;//年个人所得税
-			let tax_month;//月个人所得税
+			let pre_tax_month = pretreatNumber(value.pre_tax_month)||0;//月开票总金额
+			let after_tax_month = pretreatNumber(value.after_tax_month)||0;//月到手净得
+			let after_tax_year = pretreatNumber(value.after_tax_year)||0;//年到手净得
+			let tax_month_add = 0;//月增值税
+			let tax_year_add = 0;//年增值税
+			let surtax_month = 0;//月附加税
+			let surtax_year = 0;//年附加税
+			let taxable_income_month = 0;//月应税所得
+			let taxable_income_year = 0;//年应税所得
+			let tax_year = 0;//年个人所得税
+			let tax_month = 0;//月个人所得税
+
+			let tax_add = 0.03;//增值税率
+			let tax_sur = 0.12;//附加税率
+			let profit_rate = 0.1;//利润率
 
 			//如果输入的是月开票总金额
+
+			const calculator_after = (after_tax_year) => {
+				let rate_current = this.getRateByAfter_tax_year(after_tax_year, data,profit_rate);
+				console.log('rate_current', rate_current);
+				//计算应税所得
+				taxable_income_year = (after_tax_year - rate_current.deduction)*profit_rate / (1 - rate_current.rate*profit_rate);
+				tax_year = taxable_income_year/profit_rate - after_tax_year;
+				tax_month = tax_year / 12;
+				taxable_income_month = taxable_income_year / 12;
+				pre_tax_month = taxable_income_month * (1 + tax_add) / (profit_rate * (1 - tax_add * tax_sur));//计算月开票额
+				tax_month_add = pre_tax_month * tax_add / (1 + tax_add);
+				surtax_month = tax_month_add * tax_sur;
+				tax_year_add = tax_month_add * 12;
+				surtax_year = surtax_month * 12;
+			};
+
 			if (pre_tax_month) {
-				tax_month_add = pre_tax_month * 0.03 / (1 + 0.03);//数字表增值税率
-				surtax_month = tax_month_add * 0.12;//数字表附加税率
-				let taxable_income_month = (pre_tax_month - tax_month_add - surtax_month) * 0.1;//数字表利润率
+				tax_month_add = pre_tax_month * tax_add / (1 + tax_add);
+				surtax_month = tax_month_add * tax_sur;
+				let sell_income_month = pre_tax_month - tax_month_add - surtax_month;//月营业收入
+				let taxable_income_month = sell_income_month * profit_rate;
 				let taxable_income_year = taxable_income_month * 12;
 				let rate_current = this.getRateByTaxable_income_year(taxable_income_year, data);
+				console.log('125', rate_current);
 				tax_year = taxable_income_year * rate_current.rate - rate_current.deduction;
 				tax_month = tax_year / 12;
 				tax_year_add = tax_month_add * 12;
 				surtax_year = surtax_month * 12;
-				after_tax_year = taxable_income_year - tax_year;
+				after_tax_year = sell_income_month*12 - tax_year;
 				after_tax_month = after_tax_year / 12;
-			} else if (after_tax_month) { //如果输入的是月到手净得
+
+			//如果输入的是月到手净得
+			} else if (after_tax_month) { 
 				after_tax_year = after_tax_month * 12;
-				let rate_current = this.getRateByAfter_tax_year(after_tax_year, data);
-				console.log('rate_current', rate_current);
-				//计算应税所得
-				taxable_income_year = (after_tax_year - rate_current.deduction) / (1 - rate_current.rate);
-				tax_year = taxable_income_year - after_tax_year;
-				tax_month = tax_year / 12;
-				taxable_income_month = taxable_income_year / 12;
-				pre_tax_month = (1 + 0.03) * taxable_income_month*10 / (1 - 0.03 * 0.1);
-				tax_month_add = pre_tax_month * 0.03 / (1 + 0.03);//数字表增值税率
-				surtax_month = tax_month_add * 0.12;//数字表附加税率
-				tax_year_add = tax_month_add * 12;
-				surtax_year = surtax_month * 12;
-			} else if (after_tax_year) { //如果输入的是年到手净得
+				calculator_after(after_tax_year);
+
+			//如果输入的是年到手净得
+			} else if (after_tax_year) {
 				after_tax_month = after_tax_year / 12;
-				let rate_current = this.getRateByAfter_tax_year(after_tax_year, data);
-				console.log('rate_current', rate_current);
-				//计算应税所得
-				taxable_income_year = (after_tax_year - rate_current.deduction) / (1 - rate_current.rate);
-				tax_year = taxable_income_year - after_tax_year;
-				tax_month = tax_year / 12;
-				taxable_income_month = taxable_income_year / 12;
-				pre_tax_month = (1 + 0.03) * taxable_income_month*10 / (1 - 0.03 * 0.1);
-				tax_month_add = pre_tax_month * 0.03 / (1 + 0.03);//数字表增值税率
-				surtax_month = tax_month_add * 0.12;//数字表附加税率
-				tax_year_add = tax_month_add * 12;
-				surtax_year = surtax_month * 12;
+				calculator_after(after_tax_year);
 			}
 
 		
@@ -185,12 +182,12 @@ class SoleCompanyPage extends Component {
 			pre_tax_month:     { value: '' },
 			after_tax_month:   { value: '' },
 			after_tax_year:    { value: '' },
-			tax_month_add:     { value: '' },
-			surtax_month:      { value: '' },
-			tax_month:         { value: '' },
-			tax_year_add:      { value: '' },
-			surtax_year:       { value: '' },
-			tax_year:          { value: '' },
+			// tax_month_add:     { value: '' },
+			// surtax_month:      { value: '' },
+			// tax_month:         { value: '' },
+			// tax_year_add:      { value: '' },
+			// surtax_year:       { value: '' },
+			// tax_year:          { value: '' },
 			
 		}
 		this.props.form.setFields(
@@ -221,9 +218,6 @@ class SoleCompanyPage extends Component {
 								style={{ width: '80%', margin: '8px 0' }}>
 								
 								{getFieldDecorator('pre_tax_month', {
-									rules: [{
-										type:'number',message:'请输入有效数字！'
-									}]
 								})(
 									<Input onChange={(e)=>this.onChange(e)}/>
 								)}
@@ -234,9 +228,6 @@ class SoleCompanyPage extends Component {
 								style={{ width: '80%', margin: '8px 0'}}>
 
 								{getFieldDecorator('after_tax_month', {
-									rules: [{
-										type:'number',message:'请输入有效数字！'
-									}]
 								})(
 									<Input onChange={(e)=>this.onChange(e)}/>
 								)}
@@ -247,9 +238,6 @@ class SoleCompanyPage extends Component {
 								style={{ width: '80%', margin: '8px 0'}}>
 
 								{getFieldDecorator('after_tax_year', {
-									rules: [{
-										type:'number',message:'请输入有效数字！'
-									}]
 								})(
 									<Input onChange={(e)=>this.onChange(e)}/>
 								)}

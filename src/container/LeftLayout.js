@@ -75,7 +75,7 @@ class MyMenu extends Component{
 
           </Content>
           <Footer style={{ textAlign: 'center' }}>
-            Calcultor ©2017 Created by Maoguijun
+            Calcultor ©2017 Created by Loncus
           </Footer>
         </Layout>
       </Layout>
